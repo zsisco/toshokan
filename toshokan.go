@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/exec"
 //	"path/filepath"
 //	"strconv"
@@ -30,11 +31,13 @@ const (
 	YEAR
 )
 
-const LIBRARY = "./library/"
+const BIBS       = ".bibs/"
+const EDITOR     = "vim"
+const LIBRARY    = "./library/"
+const NOTES      = ".notes/"
 const PDF_VIEWER = "mupdf"
-const TOSHOKAN = "./toshokan.json"
+const TOSHOKAN   = "./toshokan.json"
 
-// Show a navigable tree view of the current directory.
 func main() {
 	BoolToReadFlag := func(b bool) string {
 		if b {
@@ -76,6 +79,14 @@ func main() {
 	// TODO:
 	// this should also refresh the library directory 
 	// and adding any entries
+	/*
+	ScanLibrary := func() {
+		// scan LIBRARY directory and add an Entry to toshokan for every
+		// filename not there. If a file was removed from the dir but is
+		// still in the JSON/toshokan, remove it.
+		// Run this _after_ ReadFromJson is called.
+	}
+	 */
 	ReadFromJson := func(toshokan *[]Entry) {
 		toshokanFile, readerr := ioutil.ReadFile(TOSHOKAN)
 		Check("ReadFile error", readerr)
@@ -85,14 +96,14 @@ func main() {
 
 	RedrawTable := func(table *tview.Table, toshokan []Entry) {
 		for row, entry := range toshokan {
-			// TODO: check tags with current tag selection (unless "All")
+			// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
 			table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
 			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
 			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
 			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
 		}
 		table.SetBorder(true)
-		table.SetTitle("All") // TODO: update with selected tags
+		table.SetTitle("All") // TODO: update with tag selection
 		table.SetSelectable(true, false)
 	}
 
@@ -101,6 +112,14 @@ func main() {
 		RedrawTable(table, *toshokan)
 	}
 
+	// TODO: create left frame for tags
+	// navigate by J/K
+	// selection updates the table title, refreshes the table view with
+	// only entries that match the tag
+	// TODO: built-in tag selections for "All" and "Read"/"Unread" to be able
+	// to filter by read/unread.
+
+
 	// Initialze!
 	var toshokan []Entry
 	
@@ -108,22 +127,19 @@ func main() {
 
 	table := tview.NewTable().SetFixed(1, 1)
 
+	pages := tview.NewPages()
+	pages.AddPage("library", table, true, true)
+
 	Refresh(table, &toshokan)
 
 	app.SetFocus(table)
 
-	/* XXX:	This turned into a pretty righteous cluster fuck.
-	   [ ] Move table shortcuts to table.SetDoneFunc() like escape and enter and
-	       just use control-key shortcuts to minimize interference.
-	   [ ] Make the app root a Pages object. Then add the table and form as Pages.
-	       This should be easier to switch focus. Check the Pages demo.
-	 */
 	freeInput := false
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 	/* TODO: 
 	   [X] enter: open in pdf viewer
 	   [X] r: refresh table view (reload json file) (also tags frame)
-	   [ ] e: edit meta data (title, authors, year, tags, filename (readonly))
+	   [X] e: edit meta data (title, authors, year, tags, filename (readonly))
 	   [X] q: toggle read flag
 	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
 	   [ ] t: open bib file in text editor (create file in not exists)
@@ -151,12 +167,12 @@ func main() {
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'r':
+				// refresh table view
 				if freeInput { return event }
 				Refresh(table, &toshokan)
 				return nil
 			case 'e':
 				// edit meta data
-				// tview.Form with input fields and Save/Cancel
 				if freeInput { return event }
 				freeInput = true
 				row, _ := table.GetSelection()
@@ -184,26 +200,21 @@ func main() {
 							toshokan[row].Year = newYear
 						}
 						freeInput = false
-						if err := app.SetRoot(table, true).SetFocus(table).Run(); err != nil {
-							panic(err)
-						}
+						WriteToJson(&toshokan)
 						Refresh(table, &toshokan)
+						pages.RemovePage("metadata")
 					}).
 					AddButton("Cancel", func() {
 						freeInput = false
-						if err := app.SetRoot(table, true).SetFocus(table).Run(); err != nil {
-							panic(err)
-						}
+						pages.RemovePage("metadata")
 					})
 				metadataForm.SetBorder(true).
 					SetTitle("File: " + toshokan[row].Filename).
 					SetTitleAlign(tview.AlignLeft)
-				if err := app.SetRoot(metadataForm, true).SetFocus(metadataForm).Run(); err != nil {
-					panic(err)
-				}
-				freeInput = false
+				pages.AddAndSwitchToPage("metadata", metadataForm, true)
 				return nil
 			case 'q':
+				// toggle read/unread
 				if freeInput { return event }
 				row, _ := table.GetSelection()
 				newReadFlag := SwapReadFlag(table.GetCell(row, READ).Text)
@@ -214,63 +225,39 @@ func main() {
 			}
 			case 'w':
 				if freeInput { return event }
-				// open notes in vim
+				// open notes in EDITOR
+				// XXX: this isn't working, may need to steal from aerc
+				row, _ := table.GetSelection()
+				editor := exec.Command("/bin/sh -c", EDITOR +" .notes/" + toshokan[row].Filename)
+				editor.Stdin = os.Stdin
+				editor.Stdout = os.Stdout
+				editor.Stderr = os.Stderr
+				ed_error := editor.Run()
+				Check("error opening external editor", ed_error)
 				return nil
 			case 't':
 				if freeInput { return event }
-				// open bibtex in vim
+				// open bibtex in EDITOR
 				return nil
 			case '/':
 				if freeInput { return event }
 				// search
 				return nil
 			case 'J':
+				// tag list down
 				if freeInput { return event }
 				return nil
 			case 'K':
+				// tag list up
 				if freeInput { return event }
 				return nil
-			// Fall through to capture table-level input like j,k,h,l,ESC,...
+			// Fall through to capture table-level input events like j,k,h,l,...
 			return event
 		}
 		return event
 	})
-	table.SetDoneFunc(func(key tcell.Key) {
-		/*if key == tcell.KeyEscape {
-			app.Stop()
-		}
-		if key == tcell.KeyEnter {
-			row, _ := table.GetSelection()
-			selectedFile := toshokan[row].Filename
-			cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
-			err := cmd.Start()
-			if err != nil {
-				panic(err.Error())
-			}
-		}*/
-	}).SetSelectedFunc(func(row int, column int) {
-		/*if column == READ {
-			newReadFlag := SwapReadFlag(table.GetCell(row, column).Text)
-			table.SetCell(row, column, CreateCell(newReadFlag, tview.AlignLeft, true))
-			// TODO: write to JSON (split into generic function)
-			// basically update toshokan, call Marshal, check for errors, write []byte to toshokanFile
-			toshokan[row].Read = ReadFlagToBool(newReadFlag)
-			bytes, merr := json.Marshal(toshokan)
-			Check("json.Marshal error", merr)
-			werr := ioutil.WriteFile(TOSHOKAN, bytes, 0644)
-			Check("WriteFile error", werr)
-		} else if column == TITLE {
-			table.GetCell(row, column).SetTextColor(tcell.ColorRed)
-			table.SetSelectable(false, false)
-		}*/
-	})
 
-	// TODO: create left frame for tags
-	// navigate by J/K
-	// selection updates the table title, refreshes the table view with
-	// only entries that match the tag
-
-	rooterr := app.SetRoot(table, true).SetFocus(table).Run()
+	rooterr := app.SetRoot(pages, true).Run()
 	Check("SetRoot error", rooterr)
 }
 
