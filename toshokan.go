@@ -17,7 +17,7 @@ type Entry struct {
 	Title string
 	Authors string
 	Year string
-	Tags []string
+	Tags string
 	Read bool
 	BibText string
 	Notes string
@@ -222,6 +222,7 @@ func main() {
 				newTitle := ""
 				newAuthors := ""
 				newYear := ""
+				newTags := ""
 				metadataForm := tview.NewForm().
 					AddInputField("Title", toshokan[row].Title, 0, nil, func(changed string) {
 						newTitle = changed
@@ -233,6 +234,9 @@ func main() {
 						newYear = changed
 					}).
 					// TODO: tags field
+					AddInputField("Tags (semicolon-separated)", toshokan[row].Tags, 0, nil, func(changed string) {
+						newTags = changed
+					}).
 					AddButton("Save", func() {
 						if newTitle != "" {
 							toshokan[row].Title = newTitle
@@ -242,6 +246,9 @@ func main() {
 						}
 						if newYear != "" {
 							toshokan[row].Year = newYear
+						}
+						if newTags != "" {
+							toshokan[row].Tags = newTags
 						}
 						freeInput = false
 						WriteToJson(&toshokan)
