@@ -6,8 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-//	"path/filepath"
-//	"strconv"
+	"path/filepath"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -76,22 +75,64 @@ func main() {
 		Check("WriteFile error", werr)
 	}
 
-	// TODO:
-	// this should also refresh the library directory 
-	// and adding any entries
-	/*
-	ScanLibrary := func() {
-		// scan LIBRARY directory and add an Entry to toshokan for every
-		// filename not there. If a file was removed from the dir but is
-		// still in the JSON/toshokan, remove it.
-		// Run this _after_ ReadFromJson is called.
-	}
-	 */
 	ReadFromJson := func(toshokan *[]Entry) {
 		toshokanFile, readerr := ioutil.ReadFile(TOSHOKAN)
 		Check("ReadFile error", readerr)
 		uerr := json.Unmarshal(toshokanFile, &toshokan)
 		Check("json.Unmarshal error", uerr)
+	}
+
+	// TODO:
+	// this should also refresh the library directory 
+	// and adding any entries
+	ScanLibrary := func(toshokan []Entry) []Entry {
+		// scan LIBRARY directory and add an Entry to toshokan for every
+		// filename not there. If a file was removed from the dir but is
+		// still in the JSON/toshokan, remove it.
+		// Run this _after_ ReadFromJson is called.
+		// O(2 * n^2)...
+		var files []string
+
+		err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			files = append(files, info.Name())
+			return nil
+		})
+		Check("ReadDir error!", err)
+		for _, file := range files {
+		//	fmt.Println(file)
+			noEntry := true
+			for _, entry := range toshokan {
+				if entry.Filename == file {
+					noEntry = false
+					break
+				}
+			}
+			if noEntry {
+				// add to toshokan
+				newEntry := Entry{Filename: file,
+								  Title: file,
+								  Read: false}
+				toshokan = append(toshokan, newEntry)
+			}
+		}
+		for i, entry := range toshokan {
+			missingFile := true
+			for _, file := range files {
+				if entry.Filename == file {
+					missingFile = false
+					break
+				}
+			}
+			if missingFile {
+				// remove entry from toshokan
+				toshokan[len(toshokan) - 1], toshokan[i] = toshokan[i], toshokan[len(toshokan) - 1]
+				toshokan = toshokan[:len(toshokan) - 1]
+			}
+		}
+		return toshokan
 	}
 
 	RedrawTable := func(table *tview.Table, toshokan []Entry) {
@@ -109,7 +150,9 @@ func main() {
 
 	Refresh := func(table *tview.Table, toshokan *[]Entry) {
 		ReadFromJson(toshokan)
+		*toshokan = ScanLibrary(*toshokan)
 		RedrawTable(table, *toshokan)
+		//WriteToJson(toshokan)
 	}
 
 	// TODO: create left frame for tags
@@ -189,6 +232,7 @@ func main() {
 					AddInputField("Year", toshokan[row].Year, 4, nil, func(changed string) {
 						newYear = changed
 					}).
+					// TODO: tags field
 					AddButton("Save", func() {
 						if newTitle != "" {
 							toshokan[row].Title = newTitle
@@ -201,7 +245,7 @@ func main() {
 						}
 						freeInput = false
 						WriteToJson(&toshokan)
-						Refresh(table, &toshokan)
+						RedrawTable(table, toshokan)
 						pages.RemovePage("metadata")
 					}).
 					AddButton("Cancel", func() {
