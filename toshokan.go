@@ -82,13 +82,10 @@ func main() {
 		Check("json.Unmarshal error", uerr)
 	}
 
-	// TODO:
-	// this should also refresh the library directory 
-	// and adding any entries
 	ScanLibrary := func(toshokan []Entry) []Entry {
 		// scan LIBRARY directory and add an Entry to toshokan for every
 		// filename not there. If a file was removed from the dir but is
-		// still in the JSON/toshokan, remove it.
+		// still in the JSON/toshokan, remove its entry.
 		// Run this _after_ ReadFromJson is called.
 		// O(2 * n^2)...
 		var files []string
@@ -118,18 +115,18 @@ func main() {
 				toshokan = append(toshokan, newEntry)
 			}
 		}
-		for i, entry := range toshokan {
+
+		for i := len(toshokan) - 1; i >= 0; i-- {
 			missingFile := true
 			for _, file := range files {
-				if entry.Filename == file {
+				if toshokan[i].Filename == file {
 					missingFile = false
 					break
 				}
 			}
 			if missingFile {
 				// remove entry from toshokan
-				toshokan[len(toshokan) - 1], toshokan[i] = toshokan[i], toshokan[len(toshokan) - 1]
-				toshokan = toshokan[:len(toshokan) - 1]
+				toshokan = append(toshokan[:i], toshokan[i + 1:]...)
 			}
 		}
 		return toshokan
@@ -155,13 +152,12 @@ func main() {
 		//WriteToJson(toshokan)
 	}
 
-	// TODO: create left frame for tags
+	// TODO: create left frame for tags, Flex!
 	// navigate by J/K
 	// selection updates the table title, refreshes the table view with
 	// only entries that match the tag
 	// TODO: built-in tag selections for "All" and "Read"/"Unread" to be able
 	// to filter by read/unread.
-
 
 	// Initialze!
 	var toshokan []Entry
@@ -233,7 +229,6 @@ func main() {
 					AddInputField("Year", toshokan[row].Year, 4, nil, func(changed string) {
 						newYear = changed
 					}).
-					// TODO: tags field
 					AddInputField("Tags (semicolon-separated)", toshokan[row].Tags, 0, nil, func(changed string) {
 						newTags = changed
 					}).
