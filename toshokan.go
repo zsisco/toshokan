@@ -36,7 +36,6 @@ const (
 	LIB_FOCUS = iota
 	TAG_FOCUS
 )
-var current_focus int
 
 const BIBS       = ".bibs/"
 const EDITOR     = "vim"
@@ -50,171 +49,187 @@ const ALL_TAG    = "--ALL--"
 const READ_TAG   = "--READ--"
 const UNREAD_TAG = "--UNREAD--"
 
-func main() {
-	BoolToReadFlag := func(b bool) string {
-		if b {
-			return "o"
-		} else {
-			return "-"
-		}
+// Globals
+var current_focus int
+var toshokan []Entry
+
+func BoolToReadFlag(b bool) string {
+	if b {
+		return "o"
+	} else {
+		return "-"
 	}
+}
 
-	ReadFlagToBool := func(f string) bool {
-		if f == "o" {
-			return true
-		} else {
-			return false
-		}
+func ReadFlagToBool(f string) bool {
+	if f == "o" {
+		return true
+	} else {
+		return false
 	}
+}
 
-	SwapReadFlag := func(f string) string {
-		if f == "o" {
-			return "-"
-		} else {
-			return "o"
-		}
+func SwapReadFlag(f string) string {
+	if f == "o" {
+		return "-"
+	} else {
+		return "o"
 	}
+}
 
-	CreateCell := func(content string, align int, selectable bool) *tview.TableCell {
-		return tview.NewTableCell(content).
-			SetAlign(align).
-			SetSelectable(selectable)
-	}
+func CreateCell(content string, align int, selectable bool) *tview.TableCell {
+	return tview.NewTableCell(content).
+		SetAlign(align).
+		SetSelectable(selectable)
+}
 
-	WriteToJson := func(toshokan *[]Entry) {
-		bytes, merr := json.Marshal(toshokan)
-		Check("json.Marshal error", merr)
-		werr := ioutil.WriteFile(TOSHOKAN, bytes, 0644)
-		Check("WriteFile error", werr)
-	}
+func WriteToJson() {
+	bytes, merr := json.Marshal(toshokan)
+	Check("json.Marshal error", merr)
+	werr := ioutil.WriteFile(TOSHOKAN, bytes, 0644)
+	Check("WriteFile error", werr)
+}
 
-	ReadFromJson := func(toshokan *[]Entry) {
-		toshokanFile, readerr := ioutil.ReadFile(TOSHOKAN)
-		Check("ReadFile error", readerr)
-		uerr := json.Unmarshal(toshokanFile, &toshokan)
-		Check("json.Unmarshal error", uerr)
-	}
+func ReadFromJson() {
+	toshokanFile, readerr := ioutil.ReadFile(TOSHOKAN)
+	Check("ReadFile error", readerr)
+	uerr := json.Unmarshal(toshokanFile, &toshokan)
+	Check("json.Unmarshal error", uerr)
+}
 
-	ScanLibrary := func(toshokan []Entry) []Entry {
-		// scan LIBRARY directory and add an Entry to toshokan for every
-		// filename not there. If a file was removed from the dir but is
-		// still in the JSON/toshokan, remove its entry.
-		// Run this _after_ ReadFromJson is called.
-		// O(2 * n^2)...
-		var files []string
+func ScanLibrary() {
+	// scan LIBRARY directory and add an Entry to toshokan for every
+	// filename not there. If a file was removed from the dir but is
+	// still in the JSON/toshokan, remove its entry.
+	// Run this _after_ ReadFromJson is called.
+	// O(2 * n^2)...
+	var files []string
 
-		err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-			files = append(files, info.Name())
+	err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
 			return nil
-		})
-		Check("ReadDir error!", err)
-		for _, file := range files {
-		//	fmt.Println(file)
-			noEntry := true
-			for _, entry := range toshokan {
-				if entry.Filename == file {
-					noEntry = false
-					break
-				}
-			}
-			if noEntry {
-				// add to toshokan
-				newEntry := Entry{Filename: file,
-								  Title: file,
-								  Read: false}
-				toshokan = append(toshokan, newEntry)
-			}
 		}
-
-		for i := len(toshokan) - 1; i >= 0; i-- {
-			missingFile := true
-			for _, file := range files {
-				if toshokan[i].Filename == file {
-					missingFile = false
-					break
-				}
-			}
-			if missingFile {
-				// remove entry from toshokan
-				toshokan = append(toshokan[:i], toshokan[i + 1:]...)
-			}
-		}
-		return toshokan
-	}
-
-	MakeTagSet := func(toshokan []Entry) map[string]bool {
-		tagSet := make(map[string]bool)
+		files = append(files, info.Name())
+		return nil
+	})
+	Check("ReadDir error!", err)
+	for _, file := range files {
+	//	fmt.Println(file)
+		noEntry := true
 		for _, entry := range toshokan {
-			splitTags := strings.Split(entry.Tags, ";")
-			for _, t := range splitTags {
-				trimmedTag := strings.TrimSpace(t)
-				if trimmedTag != "" {
-					tagSet[trimmedTag] = true
-				}
+			if entry.Filename == file {
+				noEntry = false
+				break
 			}
 		}
-		return tagSet
+		if noEntry {
+			// add to toshokan
+			newEntry := Entry{Filename: file,
+							  Title: file,
+							  Read: false}
+			toshokan = append(toshokan, newEntry)
+		}
 	}
 
-	RedrawTable := func(table *tview.Table, toshokan []Entry, tag string) {
-		for row, entry := range toshokan {
-			// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
-			entryTags := MakeTagSet([]Entry{entry})
-			if tag == ALL_TAG ||
-				entryTags[tag] ||
-				(tag == READ_TAG && entry.Read) ||
-				(tag == UNREAD_TAG && !entry.Read) {
-				table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
-				table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
-				table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
-				table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
+	for i := len(toshokan) - 1; i >= 0; i-- {
+		missingFile := true
+		for _, file := range files {
+			if toshokan[i].Filename == file {
+				missingFile = false
+				break
 			}
 		}
-		table.SetBorder(false)
-		table.SetTitle(tag)
-		table.SetSelectable(true, false)
-		if current_focus == LIB_FOCUS {
-			table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
-		} else {
-			table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorGray, 0)
+		if missingFile {
+			// remove entry from toshokan
+			toshokan = append(toshokan[:i], toshokan[i + 1:]...)
 		}
 	}
+}
 
-	RedrawTags := func(table *tview.Table, toshokan []Entry) {
-		tagSet := MakeTagSet(toshokan)
-		// sort tags alphabetically
-		var tags []string
-		// Add default tags
-		tags = append(tags, ALL_TAG)
-		tags = append(tags, READ_TAG)
-		tags = append(tags, UNREAD_TAG)
-		for k := range tagSet {
-			tags = append(tags, k)
+func MakeTagSet(entries []Entry) map[string]bool {
+	tagSet := make(map[string]bool)
+	for _, entry := range entries {
+		splitTags := strings.Split(entry.Tags, ";")
+		for _, t := range splitTags {
+			trimmedTag := strings.TrimSpace(t)
+			if trimmedTag != "" {
+				tagSet[trimmedTag] = true
+			}
 		}
-		sort.Strings(tags)
+	}
+	return tagSet
+}
 
-		for i, k := range tags {
-			table.SetCell(i, 0, CreateCell(k, tview.AlignLeft, true))
+func RedrawTable(table *tview.Table, tag string) {
+	for row, entry := range toshokan {
+		// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
+		entryTags := MakeTagSet([]Entry{entry})
+		if tag == ALL_TAG ||
+			entryTags[tag] ||
+			(tag == READ_TAG && entry.Read) ||
+			(tag == UNREAD_TAG && !entry.Read) {
+			table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
+			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
+			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
+			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
 		}
-		table.SetBorder(false)
-		table.SetSelectable(true, false)
 	}
+	table.SetBorder(false)
+	table.SetTitle(tag)
+	table.SetSelectable(true, false)
+	if current_focus == LIB_FOCUS {
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+	} else {
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorGray, 0)
+	}
+}
 
-	RedrawScreen := func(table *tview.Table, toshokan []Entry, tags *tview.Table) {
-		RedrawTags(tags, toshokan)
-		selectedTag := tags.GetCell(tags.GetSelection()).Text
-		RedrawTable(table, toshokan, selectedTag)
+func RedrawTags(table *tview.Table) {
+	tagSet := MakeTagSet(toshokan)
+	// sort tags alphabetically
+	var tags []string
+	// Add default tags
+	tags = append(tags, ALL_TAG)
+	tags = append(tags, READ_TAG)
+	tags = append(tags, UNREAD_TAG)
+	for k := range tagSet {
+		tags = append(tags, k)
 	}
+	sort.Strings(tags)
 
-	Refresh := func(table *tview.Table, toshokan *[]Entry, tags *tview.Table) {
-		ReadFromJson(toshokan)
-		*toshokan = ScanLibrary(*toshokan)
-		RedrawScreen(table, *toshokan, tags)
-		//WriteToJson(toshokan) // XXX: uncomment, or leave outside of here
+	for i, k := range tags {
+		table.SetCell(i, 0, CreateCell(k, tview.AlignLeft, true))
 	}
+	table.SetBorder(false)
+	table.SetSelectable(true, false)
+	if current_focus == TAG_FOCUS {
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+	} else {
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDarkGray, 0)
+	}
+}
+
+func RedrawScreen(table *tview.Table, tags *tview.Table) {
+	RedrawTags(tags)
+	selectedTag := tags.GetCell(tags.GetSelection()).Text
+	RedrawTable(table, selectedTag)
+}
+
+func Refresh(table *tview.Table, tags *tview.Table) {
+	ReadFromJson()
+	ScanLibrary()
+	RedrawScreen(table, tags)
+	//WriteToJson() // XXX: uncomment, or leave outside of here
+}
+
+func Check(msg string, err error) {
+	if err != nil {
+		fmt.Println(msg)
+		panic(err)
+	}
+}
+
+func main() {
 
 	// selection updates the table title, refreshes the table view with
 	// only entries that match the tag
@@ -222,15 +237,15 @@ func main() {
 	// to filter by read/unread.
 
 	// Initialze!
-	var toshokan []Entry
-	current_focus = LIB_FOCUS
-	
 	app := tview.NewApplication()
 
+	// Library table
 	table := tview.NewTable().SetFixed(1, 2)
 
+	// Tags table
 	tagsView := tview.NewTable()
 
+	// Main page view (swaps out library, metadata editor, text editor)
 	pages := tview.NewPages()
 	pages.AddPage("library", table, true, true)
 
@@ -238,9 +253,10 @@ func main() {
 			  AddItem(tagsView, 0, 1, false).
 			  AddItem(pages, 0, 4, true)
 
-	Refresh(table, &toshokan, tagsView)
-
 	app.SetFocus(table)
+	current_focus = LIB_FOCUS
+
+	Refresh(table, tagsView)
 
 	freeInput := false
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -252,8 +268,7 @@ func main() {
 	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
 	   [ ] t: open bib file in text editor (create file in not exists)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
-	   [ ] J: tag down
-	   [ ] K: tag up
+	   [ ] tab: swap focus between library table and tags table
 	 */
 
 		switch event.Key() {
@@ -277,7 +292,7 @@ func main() {
 			case 'r':
 				// refresh table view
 				if freeInput { return event }
-				Refresh(table, &toshokan, tagsView)
+				Refresh(table, tagsView)
 				return nil
 			case 'e':
 				// edit meta data
@@ -315,8 +330,8 @@ func main() {
 							toshokan[row].Tags = newTags
 						}
 						freeInput = false
-						WriteToJson(&toshokan)
-						RedrawScreen(table, toshokan, tagsView)
+						WriteToJson()
+						RedrawScreen(table, tagsView)
 						pages.RemovePage("metadata")
 					}).
 					AddButton("Cancel", func() {
@@ -335,7 +350,7 @@ func main() {
 				newReadFlag := SwapReadFlag(table.GetCell(row, READ).Text)
 				table.SetCell(row, READ, CreateCell(newReadFlag, tview.AlignLeft, true))
 				toshokan[row].Read = ReadFlagToBool(newReadFlag)
-				WriteToJson(&toshokan)
+				WriteToJson()
 				return nil
 			}
 			case 'w':
@@ -347,8 +362,8 @@ func main() {
 				editor.Stdin = os.Stdin
 				editor.Stdout = os.Stdout
 				editor.Stderr = os.Stderr
-				ed_error := editor.Run()
-				Check("error opening external editor", ed_error)
+				ederror := editor.Run()
+				Check("error opening external editor", ederror)
 				return nil
 			case 't':
 				if freeInput { return event }
@@ -358,14 +373,6 @@ func main() {
 				if freeInput { return event }
 				// search
 				return nil
-			case 'J':
-				// tag list down
-				if freeInput { return event }
-				return nil
-			case 'K':
-				// tag list up
-				if freeInput { return event }
-				return nil
 			// Fall through to capture table-level input events like j,k,h,l,...
 			return event
 		}
@@ -374,11 +381,4 @@ func main() {
 
 	rooterr := app.SetRoot(layout, true).Run()
 	Check("SetRoot error", rooterr)
-}
-
-func Check(msg string, err error) {
-	if err != nil {
-		fmt.Println(msg)
-		panic(err)
-	}
 }
