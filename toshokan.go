@@ -180,7 +180,7 @@ func RedrawTable(table *tview.Table, tag string) {
 	if current_focus == LIB_FOCUS {
 		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
 	} else {
-		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorGray, 0)
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDarkGray, 0)
 	}
 }
 
@@ -276,17 +276,29 @@ func main() {
 			if freeInput { return event }
 			app.Stop()
 			return nil
+		case tcell.KeyTab:
+			if current_focus == LIB_FOCUS {
+				current_focus = TAG_FOCUS
+				app.SetFocus(tagsView)
+			} else {
+				current_focus = LIB_FOCUS
+				app.SetFocus(table)
+			}
+			RedrawScreen(table, tagsView)
 		case tcell.KeyEnter:
 			if freeInput { return event }
-			row, _ := table.GetSelection()
-			selectedFile := toshokan[row].Filename
-			cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
-			err := cmd.Start()
-			if err != nil {
-				panic(err.Error())
+			if current_focus == TAG_FOCUS {
+				// TODO: update tag selection
+				return event
+			}
+			if current_focus == LIB_FOCUS {
+				row, _ := table.GetSelection()
+				selectedFile := toshokan[row].Filename
+				cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
+				err := cmd.Start()
+				Check("Error launching PDF viewer", err)
 				return nil
 			}
-			return nil
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'r':
@@ -297,6 +309,7 @@ func main() {
 			case 'e':
 				// edit meta data
 				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
 				freeInput = true
 				row, _ := table.GetSelection()
 				newTitle := ""
@@ -346,6 +359,7 @@ func main() {
 			case 'q':
 				// toggle read/unread
 				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
 				row, _ := table.GetSelection()
 				newReadFlag := SwapReadFlag(table.GetCell(row, READ).Text)
 				table.SetCell(row, READ, CreateCell(newReadFlag, tview.AlignLeft, true))
@@ -355,6 +369,7 @@ func main() {
 			}
 			case 'w':
 				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
 				// open notes in EDITOR
 				// XXX: this isn't working, may need to steal from aerc
 				row, _ := table.GetSelection()
@@ -367,10 +382,12 @@ func main() {
 				return nil
 			case 't':
 				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
 				// open bibtex in EDITOR
 				return nil
 			case '/':
 				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
 				// search
 				return nil
 			// Fall through to capture table-level input events like j,k,h,l,...
