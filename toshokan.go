@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -30,12 +32,23 @@ const (
 	YEAR
 )
 
+const (
+	LIB_FOCUS = iota
+	TAG_FOCUS
+)
+var current_focus int
+
 const BIBS       = ".bibs/"
 const EDITOR     = "vim"
 const LIBRARY    = "./library/"
 const NOTES      = ".notes/"
 const PDF_VIEWER = "mupdf"
 const TOSHOKAN   = "./toshokan.json"
+
+// Default tags
+const ALL_TAG    = "--ALL--"
+const READ_TAG   = "--READ--"
+const UNREAD_TAG = "--UNREAD--"
 
 func main() {
 	BoolToReadFlag := func(b bool) string {
@@ -132,28 +145,77 @@ func main() {
 		return toshokan
 	}
 
-	RedrawTable := func(table *tview.Table, toshokan []Entry) {
+	MakeTagSet := func(toshokan []Entry) map[string]bool {
+		tagSet := make(map[string]bool)
+		for _, entry := range toshokan {
+			splitTags := strings.Split(entry.Tags, ";")
+			for _, t := range splitTags {
+				trimmedTag := strings.TrimSpace(t)
+				if trimmedTag != "" {
+					tagSet[trimmedTag] = true
+				}
+			}
+		}
+		return tagSet
+	}
+
+	RedrawTable := func(table *tview.Table, toshokan []Entry, tag string) {
 		for row, entry := range toshokan {
 			// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
-			table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
-			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
-			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
-			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
+			entryTags := MakeTagSet([]Entry{entry})
+			if tag == ALL_TAG ||
+				entryTags[tag] ||
+				(tag == READ_TAG && entry.Read) ||
+				(tag == UNREAD_TAG && !entry.Read) {
+				table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
+				table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
+				table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
+				table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
+			}
 		}
-		table.SetBorder(true)
-		table.SetTitle("All") // TODO: update with tag selection
+		table.SetBorder(false)
+		table.SetTitle(tag)
+		table.SetSelectable(true, false)
+		if current_focus == LIB_FOCUS {
+			table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+		} else {
+			table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorGray, 0)
+		}
+	}
+
+	RedrawTags := func(table *tview.Table, toshokan []Entry) {
+		tagSet := MakeTagSet(toshokan)
+		// sort tags alphabetically
+		var tags []string
+		// Add default tags
+		tags = append(tags, ALL_TAG)
+		tags = append(tags, READ_TAG)
+		tags = append(tags, UNREAD_TAG)
+		for k := range tagSet {
+			tags = append(tags, k)
+		}
+		sort.Strings(tags)
+
+		for i, k := range tags {
+			table.SetCell(i, 0, CreateCell(k, tview.AlignLeft, true))
+		}
+		table.SetBorder(false)
 		table.SetSelectable(true, false)
 	}
 
-	Refresh := func(table *tview.Table, toshokan *[]Entry) {
-		ReadFromJson(toshokan)
-		*toshokan = ScanLibrary(*toshokan)
-		RedrawTable(table, *toshokan)
-		//WriteToJson(toshokan)
+	RedrawScreen := func(table *tview.Table, toshokan []Entry, tags *tview.Table) {
+		RedrawTags(tags, toshokan)
+		selectedTag := tags.GetCell(tags.GetSelection()).Text
+		RedrawTable(table, toshokan, selectedTag)
 	}
 
-	// TODO: create left frame for tags, Flex!
-	// navigate by J/K
+	Refresh := func(table *tview.Table, toshokan *[]Entry, tags *tview.Table) {
+		ReadFromJson(toshokan)
+		*toshokan = ScanLibrary(*toshokan)
+		RedrawScreen(table, *toshokan, tags)
+		//WriteToJson(toshokan) // XXX: uncomment, or leave outside of here
+	}
+
 	// selection updates the table title, refreshes the table view with
 	// only entries that match the tag
 	// TODO: built-in tag selections for "All" and "Read"/"Unread" to be able
@@ -161,15 +223,22 @@ func main() {
 
 	// Initialze!
 	var toshokan []Entry
+	current_focus = LIB_FOCUS
 	
 	app := tview.NewApplication()
 
-	table := tview.NewTable().SetFixed(1, 1)
+	table := tview.NewTable().SetFixed(1, 2)
+
+	tagsView := tview.NewTable()
 
 	pages := tview.NewPages()
 	pages.AddPage("library", table, true, true)
 
-	Refresh(table, &toshokan)
+	layout := tview.NewFlex().
+			  AddItem(tagsView, 0, 1, false).
+			  AddItem(pages, 0, 4, true)
+
+	Refresh(table, &toshokan, tagsView)
 
 	app.SetFocus(table)
 
@@ -183,8 +252,8 @@ func main() {
 	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
 	   [ ] t: open bib file in text editor (create file in not exists)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
-	   [ ] J: tag up
-	   [ ] K: tag down
+	   [ ] J: tag down
+	   [ ] K: tag up
 	 */
 
 		switch event.Key() {
@@ -208,7 +277,7 @@ func main() {
 			case 'r':
 				// refresh table view
 				if freeInput { return event }
-				Refresh(table, &toshokan)
+				Refresh(table, &toshokan, tagsView)
 				return nil
 			case 'e':
 				// edit meta data
@@ -247,7 +316,7 @@ func main() {
 						}
 						freeInput = false
 						WriteToJson(&toshokan)
-						RedrawTable(table, toshokan)
+						RedrawScreen(table, toshokan, tagsView)
 						pages.RemovePage("metadata")
 					}).
 					AddButton("Cancel", func() {
@@ -303,7 +372,7 @@ func main() {
 		return event
 	})
 
-	rooterr := app.SetRoot(pages, true).Run()
+	rooterr := app.SetRoot(layout, true).Run()
 	Check("SetRoot error", rooterr)
 }
 
