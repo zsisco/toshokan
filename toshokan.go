@@ -161,7 +161,11 @@ func MakeTagSet(entries []Entry) map[string]bool {
 }
 
 func RedrawTable(table *tview.Table, tag string) {
-	for row, entry := range toshokan {
+	for row := 0; row < table.GetRowCount(); row++ {
+		table.RemoveRow(row)
+	}
+	row := 0
+	for _, entry := range toshokan {
 		// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
 		entryTags := MakeTagSet([]Entry{entry})
 		if tag == ALL_TAG ||
@@ -172,6 +176,7 @@ func RedrawTable(table *tview.Table, tag string) {
 			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
 			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
 			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
+			row++
 		}
 	}
 	table.SetBorder(false)
@@ -289,7 +294,7 @@ func main() {
 			if freeInput { return event }
 			if current_focus == TAG_FOCUS {
 				// TODO: update tag selection
-				return event
+				RedrawScreen(table, tagsView)
 			}
 			if current_focus == LIB_FOCUS {
 				row, _ := table.GetSelection()
