@@ -116,21 +116,6 @@ func ScanLibrary() {
 	})
 	Check("ReadDir error!", err)
 	for _, file := range files {
-	//	fmt.Println(file)
-		/*noEntry := true
-		for _, entry := range toshokan {
-			if entry.Filename == file {
-				noEntry = false
-				break
-			}
-		}
-		if noEntry {
-			// add to toshokan
-			newEntry := Entry{Filename: file,
-							  Title: file,
-							  Read: false}
-			toshokan = append(toshokan, newEntry)
-		}*/
 		if _, exists := toshokan[file]; !exists {
 			toshokan[file] = &Entry{Title: file, Read: false}
 		}
@@ -148,19 +133,6 @@ func ScanLibrary() {
 			delete(toshokan, key)
 		}
 	}
-	/*for i := len(toshokan) - 1; i >= 0; i-- {
-		missingFile := true
-		for _, file := range files {
-			if toshokan[i].Filename == file {
-				missingFile = false
-				break
-			}
-		}
-		if missingFile {
-			// remove entry from toshokan
-			toshokan = append(toshokan[:i], toshokan[i + 1:]...)
-		}
-	}*/
 }
 
 func MakeTagSet(entries EntryMap) map[string]bool {
@@ -183,7 +155,6 @@ func RedrawTable(table *tview.Table, tag string) {
 	}
 	row := 0
 	for filename, entry := range toshokan {
-		// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
 		entryTags := MakeTagSet(EntryMap {filename: entry})
 		if tag == ALL_TAG ||
 			entryTags[tag] ||
@@ -253,12 +224,6 @@ func Check(msg string, err error) {
 }
 
 func main() {
-
-	// selection updates the table title, refreshes the table view with
-	// only entries that match the tag
-	// TODO: built-in tag selections for "All" and "Read"/"Unread" to be able
-	// to filter by read/unread.
-
 	// Initialze!
 	app := tview.NewApplication()
 
@@ -291,7 +256,7 @@ func main() {
 	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
 	   [ ] t: open bib file in text editor (create file in not exists)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
-	   [ ] tab: swap focus between library table and tags table
+	   [X] tab: swap focus between library table and tags table
 	 */
 
 		switch event.Key() {
@@ -311,13 +276,11 @@ func main() {
 		case tcell.KeyEnter:
 			if freeInput { return event }
 			if current_focus == TAG_FOCUS {
-				// TODO: update tag selection
 				RedrawScreen(table, tagsView)
 			}
 			if current_focus == LIB_FOCUS {
 				row, _ := table.GetSelection()
 				selectedFile := table.GetCell(row, FILENAME).Text
-				//selectedFile := toshokan[row].Filename
 				cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
 				err := cmd.Start()
 				Check("Error launching PDF viewer", err)
