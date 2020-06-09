@@ -15,7 +15,6 @@ import (
 )
 
 type Entry struct {
-	Filename string
 	Title string
 	Authors string
 	Year string
@@ -25,11 +24,14 @@ type Entry struct {
 	Notes string
 }
 
+type EntryMap map[string]*Entry
+
 const (
 	READ = iota
 	TITLE
 	AUTHORS
 	YEAR
+	FILENAME
 )
 
 const (
@@ -51,7 +53,7 @@ const UNREAD_TAG = "--UNREAD--"
 
 // Globals
 var current_focus int
-var toshokan []Entry
+var toshokan EntryMap
 
 func BoolToReadFlag(b bool) string {
 	if b {
@@ -115,7 +117,7 @@ func ScanLibrary() {
 	Check("ReadDir error!", err)
 	for _, file := range files {
 	//	fmt.Println(file)
-		noEntry := true
+		/*noEntry := true
 		for _, entry := range toshokan {
 			if entry.Filename == file {
 				noEntry = false
@@ -128,10 +130,25 @@ func ScanLibrary() {
 							  Title: file,
 							  Read: false}
 			toshokan = append(toshokan, newEntry)
+		}*/
+		if _, exists := toshokan[file]; !exists {
+			toshokan[file] = &Entry{Title: file, Read: false}
 		}
 	}
 
-	for i := len(toshokan) - 1; i >= 0; i-- {
+	for key := range toshokan {
+		missingFile := true
+		for _, file := range files {
+			if key == file {
+				missingFile = false
+				break
+			}
+		}
+		if missingFile {
+			delete(toshokan, key)
+		}
+	}
+	/*for i := len(toshokan) - 1; i >= 0; i-- {
 		missingFile := true
 		for _, file := range files {
 			if toshokan[i].Filename == file {
@@ -143,10 +160,10 @@ func ScanLibrary() {
 			// remove entry from toshokan
 			toshokan = append(toshokan[:i], toshokan[i + 1:]...)
 		}
-	}
+	}*/
 }
 
-func MakeTagSet(entries []Entry) map[string]bool {
+func MakeTagSet(entries EntryMap) map[string]bool {
 	tagSet := make(map[string]bool)
 	for _, entry := range entries {
 		splitTags := strings.Split(entry.Tags, ";")
@@ -165,9 +182,9 @@ func RedrawTable(table *tview.Table, tag string) {
 		table.RemoveRow(row)
 	}
 	row := 0
-	for _, entry := range toshokan {
+	for filename, entry := range toshokan {
 		// TODO: check tags with current tag selection (plus exceptions like "All", "Read"/"Unread")
-		entryTags := MakeTagSet([]Entry{entry})
+		entryTags := MakeTagSet(EntryMap {filename: entry})
 		if tag == ALL_TAG ||
 			entryTags[tag] ||
 			(tag == READ_TAG && entry.Read) ||
@@ -176,6 +193,7 @@ func RedrawTable(table *tview.Table, tag string) {
 			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
 			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
 			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
+			table.SetCell(row, FILENAME, CreateCell(filename, tview.AlignLeft, true))
 			row++
 		}
 	}
@@ -298,7 +316,8 @@ func main() {
 			}
 			if current_focus == LIB_FOCUS {
 				row, _ := table.GetSelection()
-				selectedFile := toshokan[row].Filename
+				selectedFile := table.GetCell(row, FILENAME).Text
+				//selectedFile := toshokan[row].Filename
 				cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
 				err := cmd.Start()
 				Check("Error launching PDF viewer", err)
@@ -317,35 +336,36 @@ func main() {
 				if current_focus == TAG_FOCUS { return event }
 				freeInput = true
 				row, _ := table.GetSelection()
+				filename := table.GetCell(row, FILENAME).Text
 				newTitle := ""
 				newAuthors := ""
 				newYear := ""
 				newTags := ""
 				metadataForm := tview.NewForm().
-					AddInputField("Title", toshokan[row].Title, 0, nil, func(changed string) {
+					AddInputField("Title", toshokan[filename].Title, 0, nil, func(changed string) {
 						newTitle = changed
 					}).
-					AddInputField("Authors", toshokan[row].Authors, 0, nil, func(changed string) {
+					AddInputField("Authors", toshokan[filename].Authors, 0, nil, func(changed string) {
 						newAuthors = changed
 					}).
-					AddInputField("Year", toshokan[row].Year, 4, nil, func(changed string) {
+					AddInputField("Year", toshokan[filename].Year, 4, nil, func(changed string) {
 						newYear = changed
 					}).
-					AddInputField("Tags (semicolon-separated)", toshokan[row].Tags, 0, nil, func(changed string) {
+					AddInputField("Tags (semicolon-separated)", toshokan[filename].Tags, 0, nil, func(changed string) {
 						newTags = changed
 					}).
 					AddButton("Save", func() {
 						if newTitle != "" {
-							toshokan[row].Title = newTitle
+							toshokan[filename].Title = newTitle
 						}
 						if newAuthors != "" {
-							toshokan[row].Authors = newAuthors
+							toshokan[filename].Authors = newAuthors
 						}
 						if newYear != "" {
-							toshokan[row].Year = newYear
+							toshokan[filename].Year = newYear
 						}
 						if newTags != "" {
-							toshokan[row].Tags = newTags
+							toshokan[filename].Tags = newTags
 						}
 						freeInput = false
 						WriteToJson()
@@ -357,7 +377,7 @@ func main() {
 						pages.RemovePage("metadata")
 					})
 				metadataForm.SetBorder(true).
-					SetTitle("File: " + toshokan[row].Filename).
+					SetTitle("File: " + filename).
 					SetTitleAlign(tview.AlignLeft)
 				pages.AddAndSwitchToPage("metadata", metadataForm, true)
 				return nil
@@ -366,9 +386,10 @@ func main() {
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				row, _ := table.GetSelection()
+				filename := table.GetCell(row, FILENAME).Text
 				newReadFlag := SwapReadFlag(table.GetCell(row, READ).Text)
 				table.SetCell(row, READ, CreateCell(newReadFlag, tview.AlignLeft, true))
-				toshokan[row].Read = ReadFlagToBool(newReadFlag)
+				toshokan[filename].Read = ReadFlagToBool(newReadFlag)
 				WriteToJson()
 				return nil
 			}
@@ -378,7 +399,8 @@ func main() {
 				// open notes in EDITOR
 				// XXX: this isn't working, may need to steal from aerc
 				row, _ := table.GetSelection()
-				editor := exec.Command("/bin/sh -c", EDITOR +" .notes/" + toshokan[row].Filename)
+				filename := table.GetCell(row, FILENAME).Text
+				editor := exec.Command("/bin/sh -c", EDITOR +" .notes/" + filename)
 				editor.Stdin = os.Stdin
 				editor.Stdout = os.Stdout
 				editor.Stderr = os.Stderr
