@@ -1,5 +1,12 @@
 package main
 
+/* METATODO:
+   How to upload my current library to this program?
+   Or am I just starting from scratch adding new papers as they come. 
+   (This isn't a bad approach as this program is as much of a library
+   as it is a _tracker_ for tracking papers I want to read/am reading.)
+ */
+
 import (
 	"encoding/json"
 	"fmt"
@@ -83,6 +90,17 @@ func SwapReadFlag(f string) string {
 	} else {
 		return "o"
 	}
+}
+
+func OpenEditor(filepath string) {
+	app.Suspend(func() {
+		cmd := exec.Command(EDITOR, filepath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err := cmd.Run()
+		Check("Error opening text editor!", err)
+	})
 }
 
 func MakeFilename(author, year, title, ext string) string {
@@ -286,11 +304,12 @@ func main() {
 	   [X] r: refresh table view (reload json file) (also tags frame)
 	   [X] e: edit tags (metadata)
 	   [X] q: toggle read flag
-	   [ ] w: open notes file in text editor (create file in not exists); 
+	   [X] w: open notes file in text editor (create file in not exists); 
 		      how to open vim inside the program like aerc?
-	   [ ] t: open bib file in text editor (create file in not exists)
-	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
+	   [X] t: open bib file in text editor (create file in not exists)
+	   [ ] /: search meta data in current view (moves cursor with n/N search results)
 	   [X] tab: swap focus between library table and tags table
+	   [ ] export bibtex to file (command-line argument?)
 	 */
 
 		switch event.Key() {
@@ -376,28 +395,25 @@ func main() {
 				toshokan[filename].Read = ReadFlagToBool(newReadFlag)
 				WriteToJson()
 				return nil
-			}
 			case 'w':
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
-				// open notes in EDITOR
-				// XXX: this isn't working, may need to steal from aerc
 				row, _ := table.GetSelection()
 				filename := MakeFilename(table.GetCell(row, AUTHORS).Text,
 											 table.GetCell(row, YEAR).Text,
 											 table.GetCell(row, TITLE).Text,
 											 "md")
-				editor := exec.Command("/bin/sh -c", EDITOR +" .notes/" + filename)
-				editor.Stdin = os.Stdin
-				editor.Stdout = os.Stdout
-				editor.Stderr = os.Stderr
-				ederror := editor.Run()
-				Check("error opening external editor", ederror)
+				OpenEditor(NOTES + filename)
 				return nil
 			case 't':
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
-				// open bibtex in EDITOR
+				row, _ := table.GetSelection()
+				filename := MakeFilename(table.GetCell(row, AUTHORS).Text,
+											 table.GetCell(row, YEAR).Text,
+											 table.GetCell(row, TITLE).Text,
+											 "bib")
+				OpenEditor(BIBS + filename)
 				return nil
 			case '/':
 				if freeInput { return event }
@@ -406,6 +422,7 @@ func main() {
 				return nil
 			// Fall through to capture table-level input events like j,k,h,l,...
 			return event
+			}
 		}
 		return event
 	})
