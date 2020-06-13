@@ -31,7 +31,6 @@ const (
 	TITLE
 	AUTHORS
 	YEAR
-	FILENAME
 )
 
 const (
@@ -39,12 +38,15 @@ const (
 	TAG_FOCUS
 )
 
+// Default paths
 const BIBS       = ".bibs/"
-const EDITOR     = "vim"
 const LIBRARY    = "./library/"
 const NOTES      = ".notes/"
-const PDF_VIEWER = "mupdf"
 const TOSHOKAN   = "./toshokan.json"
+
+// Default apps
+const EDITOR     = "vim"
+const PDF_VIEWER = "mupdf"
 
 // Default tags
 const ALL_TAG    = "--ALL--"
@@ -79,6 +81,12 @@ func SwapReadFlag(f string) string {
 	}
 }
 
+func MakeFilename(author, year, title, ext string) string {
+	encodeAuthor := strings.Replace(author, " ", "-", -1)
+	encodeTitle := strings.Replace(title, " ", "-", -1)
+	return encodeAuthor + "_" + year + "_" + encodeTitle + "." + ext
+}
+
 func CreateCell(content string, align int, selectable bool) *tview.TableCell {
 	return tview.NewTableCell(content).
 		SetAlign(align).
@@ -104,7 +112,6 @@ func ScanLibrary() {
 	// filename not there. If a file was removed from the dir but is
 	// still in the JSON/toshokan, remove its entry.
 	// Run this _after_ ReadFromJson is called.
-	// O(2 * n^2)...
 	var files []string
 
 	err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
@@ -115,9 +122,18 @@ func ScanLibrary() {
 		return nil
 	})
 	Check("ReadDir error!", err)
+
 	for _, file := range files {
 		if _, exists := toshokan[file]; !exists {
-			toshokan[file] = &Entry{Title: file, Read: false}
+			// parse filename for authors_year_title
+			fileparts := strings.Split(strings.Split(file, ".")[0], "_")
+			authors := strings.Replace(fileparts[0], "-", " ", -1)
+			year := fileparts[1]
+			title := strings.Replace(fileparts[2], "-", " ", -1)
+			toshokan[file] = &Entry{Title: title,
+									Authors: authors,
+									Year: year,
+								    Read: false}
 		}
 	}
 
@@ -150,21 +166,33 @@ func MakeTagSet(entries EntryMap) map[string]bool {
 }
 
 func RedrawTable(table *tview.Table, tag string) {
+	// clear table
 	for row := 0; row < table.GetRowCount(); row++ {
 		table.RemoveRow(row)
 	}
+	titleToFile := make(map[string]string)
+	for k := range toshokan {
+		titleToFile[toshokan[k].Title] = k
+	}
+	// sort titles alphabetically
+	var titles []string
+	for k := range toshokan {
+		titles = append(titles, toshokan[k].Title)
+	}
+	sort.Strings(titles)
+
 	row := 0
-	for filename, entry := range toshokan {
-		entryTags := MakeTagSet(EntryMap {filename: entry})
+	for _,title := range titles {
+		filename := titleToFile[title]
+		entryTags := MakeTagSet(EntryMap {filename: toshokan[filename]})
 		if tag == ALL_TAG ||
 			entryTags[tag] ||
-			(tag == READ_TAG && entry.Read) ||
-			(tag == UNREAD_TAG && !entry.Read) {
-			table.SetCell(row, READ, CreateCell(BoolToReadFlag(entry.Read), tview.AlignLeft, true))
-			table.SetCell(row, TITLE, CreateCell(entry.Title, tview.AlignLeft, true))
-			table.SetCell(row, AUTHORS, CreateCell(entry.Authors, tview.AlignLeft, true))
-			table.SetCell(row, YEAR, CreateCell(entry.Year, tview.AlignLeft, true))
-			table.SetCell(row, FILENAME, CreateCell(filename, tview.AlignLeft, true))
+			(tag == READ_TAG && toshokan[filename].Read) ||
+			(tag == UNREAD_TAG && !toshokan[filename].Read) {
+			table.SetCell(row, READ, CreateCell(BoolToReadFlag(toshokan[filename].Read), tview.AlignLeft, true))
+			table.SetCell(row, TITLE, CreateCell(toshokan[filename].Title, tview.AlignLeft, true))
+			table.SetCell(row, AUTHORS, CreateCell(toshokan[filename].Authors, tview.AlignLeft, true))
+			table.SetCell(row, YEAR, CreateCell(toshokan[filename].Year, tview.AlignLeft, true))
 			row++
 		}
 	}
@@ -213,7 +241,6 @@ func Refresh(table *tview.Table, tags *tview.Table) {
 	ReadFromJson()
 	ScanLibrary()
 	RedrawScreen(table, tags)
-	//WriteToJson() // XXX: uncomment, or leave outside of here
 }
 
 func Check(msg string, err error) {
@@ -228,7 +255,7 @@ func main() {
 	app := tview.NewApplication()
 
 	// Library table
-	table := tview.NewTable().SetFixed(1, 2)
+	table := tview.NewTable().SetFixed(1, 3)
 
 	// Tags table
 	tagsView := tview.NewTable()
@@ -251,10 +278,10 @@ func main() {
 	/* TODO: 
 	   [X] enter: open in pdf viewer
 	   [X] r: refresh table view (reload json file) (also tags frame)
-	   [X] e: edit meta data (title, authors, year, tags, filename (readonly))
+	   [ ] t: edit tags
 	   [X] q: toggle read flag
 	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
-	   [ ] t: open bib file in text editor (create file in not exists)
+	   [ ] e: open bib file in text editor (create file in not exists)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
 	   [X] tab: swap focus between library table and tags table
 	 */
@@ -265,6 +292,7 @@ func main() {
 			app.Stop()
 			return nil
 		case tcell.KeyTab:
+			if freeInput { return event }
 			if current_focus == LIB_FOCUS {
 				current_focus = TAG_FOCUS
 				app.SetFocus(tagsView)
@@ -280,7 +308,10 @@ func main() {
 			}
 			if current_focus == LIB_FOCUS {
 				row, _ := table.GetSelection()
-				selectedFile := table.GetCell(row, FILENAME).Text
+				selectedFile := MakeFilename(table.GetCell(row, AUTHORS).Text,
+											 table.GetCell(row, YEAR).Text,
+											 table.GetCell(row, TITLE).Text,
+											 "pdf")
 				cmd := exec.Command(PDF_VIEWER, LIBRARY + selectedFile)
 				err := cmd.Start()
 				Check("Error launching PDF viewer", err)
@@ -293,40 +324,23 @@ func main() {
 				if freeInput { return event }
 				Refresh(table, tagsView)
 				return nil
-			case 'e':
+			case 't':
 				// edit meta data
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				freeInput = true
 				row, _ := table.GetSelection()
-				filename := table.GetCell(row, FILENAME).Text
-				newTitle := ""
-				newAuthors := ""
-				newYear := ""
+				filename := MakeFilename(table.GetCell(row, AUTHORS).Text,
+											 table.GetCell(row, YEAR).Text,
+											 table.GetCell(row, TITLE).Text,
+											 "pdf")
 				newTags := ""
+				// TODO: change input field colors to something always readable
 				metadataForm := tview.NewForm().
-					AddInputField("Title", toshokan[filename].Title, 0, nil, func(changed string) {
-						newTitle = changed
-					}).
-					AddInputField("Authors", toshokan[filename].Authors, 0, nil, func(changed string) {
-						newAuthors = changed
-					}).
-					AddInputField("Year", toshokan[filename].Year, 4, nil, func(changed string) {
-						newYear = changed
-					}).
 					AddInputField("Tags (semicolon-separated)", toshokan[filename].Tags, 0, nil, func(changed string) {
 						newTags = changed
 					}).
 					AddButton("Save", func() {
-						if newTitle != "" {
-							toshokan[filename].Title = newTitle
-						}
-						if newAuthors != "" {
-							toshokan[filename].Authors = newAuthors
-						}
-						if newYear != "" {
-							toshokan[filename].Year = newYear
-						}
 						if newTags != "" {
 							toshokan[filename].Tags = newTags
 						}
@@ -339,8 +353,11 @@ func main() {
 						freeInput = false
 						pages.RemovePage("metadata")
 					})
+				metadataForm.SetLabelColor(tcell.ColorDefault)
+				metadataForm.SetFieldBackgroundColor(tcell.ColorDefault)
+				metadataForm.SetButtonBackgroundColor(tcell.ColorDarkGray)
 				metadataForm.SetBorder(true).
-					SetTitle("File: " + filename).
+					SetTitle("Metadata: " + table.GetCell(row, TITLE).Text).
 					SetTitleAlign(tview.AlignLeft)
 				pages.AddAndSwitchToPage("metadata", metadataForm, true)
 				return nil
@@ -349,7 +366,10 @@ func main() {
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				row, _ := table.GetSelection()
-				filename := table.GetCell(row, FILENAME).Text
+				filename := MakeFilename(table.GetCell(row, AUTHORS).Text,
+											 table.GetCell(row, YEAR).Text,
+											 table.GetCell(row, TITLE).Text,
+											 "pdf")
 				newReadFlag := SwapReadFlag(table.GetCell(row, READ).Text)
 				table.SetCell(row, READ, CreateCell(newReadFlag, tview.AlignLeft, true))
 				toshokan[filename].Read = ReadFlagToBool(newReadFlag)
@@ -362,7 +382,10 @@ func main() {
 				// open notes in EDITOR
 				// XXX: this isn't working, may need to steal from aerc
 				row, _ := table.GetSelection()
-				filename := table.GetCell(row, FILENAME).Text
+				filename := MakeFilename(table.GetCell(row, AUTHORS).Text,
+											 table.GetCell(row, YEAR).Text,
+											 table.GetCell(row, TITLE).Text,
+											 "md")
 				editor := exec.Command("/bin/sh -c", EDITOR +" .notes/" + filename)
 				editor.Stdin = os.Stdin
 				editor.Stdout = os.Stdout
@@ -370,7 +393,7 @@ func main() {
 				ederror := editor.Run()
 				Check("error opening external editor", ederror)
 				return nil
-			case 't':
+			case 'e':
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				// open bibtex in EDITOR
