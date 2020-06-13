@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -38,6 +39,8 @@ const (
 	TAG_FOCUS
 )
 
+const REFRESH = 20 * time.Millisecond
+
 // Default paths
 const BIBS       = ".bibs/"
 const LIBRARY    = "./library/"
@@ -54,6 +57,7 @@ const READ_TAG   = "--READ--"
 const UNREAD_TAG = "--UNREAD--"
 
 // Globals
+var app *tview.Application
 var current_focus int
 var toshokan EntryMap
 
@@ -232,15 +236,17 @@ func RedrawTags(table *tview.Table) {
 }
 
 func RedrawScreen(table *tview.Table, tags *tview.Table) {
-	RedrawTags(tags)
-	selectedTag := tags.GetCell(tags.GetSelection()).Text
-	RedrawTable(table, selectedTag)
+	for {
+		time.Sleep(REFRESH)
+		RedrawTags(tags)
+		selectedTag := tags.GetCell(tags.GetSelection()).Text
+		app.QueueUpdateDraw(func() { RedrawTable(table, selectedTag) })
+	}
 }
 
 func Refresh(table *tview.Table, tags *tview.Table) {
 	ReadFromJson()
 	ScanLibrary()
-	RedrawScreen(table, tags)
 }
 
 func Check(msg string, err error) {
@@ -252,7 +258,7 @@ func Check(msg string, err error) {
 
 func main() {
 	// Initialze!
-	app := tview.NewApplication()
+	app = tview.NewApplication()
 
 	// Library table
 	table := tview.NewTable().SetFixed(1, 3)
@@ -278,10 +284,11 @@ func main() {
 	/* TODO: 
 	   [X] enter: open in pdf viewer
 	   [X] r: refresh table view (reload json file) (also tags frame)
-	   [ ] t: edit tags
+	   [X] e: edit tags (metadata)
 	   [X] q: toggle read flag
-	   [ ] w: open notes file in text editor (create file in not exists); how to open vim inside the program like aerc?
-	   [ ] e: open bib file in text editor (create file in not exists)
+	   [ ] w: open notes file in text editor (create file in not exists); 
+		      how to open vim inside the program like aerc?
+	   [ ] t: open bib file in text editor (create file in not exists)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results) [ADVANCED]
 	   [X] tab: swap focus between library table and tags table
 	 */
@@ -300,12 +307,8 @@ func main() {
 				current_focus = LIB_FOCUS
 				app.SetFocus(table)
 			}
-			RedrawScreen(table, tagsView)
 		case tcell.KeyEnter:
 			if freeInput { return event }
-			if current_focus == TAG_FOCUS {
-				RedrawScreen(table, tagsView)
-			}
 			if current_focus == LIB_FOCUS {
 				row, _ := table.GetSelection()
 				selectedFile := MakeFilename(table.GetCell(row, AUTHORS).Text,
@@ -324,7 +327,7 @@ func main() {
 				if freeInput { return event }
 				Refresh(table, tagsView)
 				return nil
-			case 't':
+			case 'e':
 				// edit meta data
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
@@ -335,7 +338,6 @@ func main() {
 											 table.GetCell(row, TITLE).Text,
 											 "pdf")
 				newTags := ""
-				// TODO: change input field colors to something always readable
 				metadataForm := tview.NewForm().
 					AddInputField("Tags (semicolon-separated)", toshokan[filename].Tags, 0, nil, func(changed string) {
 						newTags = changed
@@ -346,7 +348,6 @@ func main() {
 						}
 						freeInput = false
 						WriteToJson()
-						RedrawScreen(table, tagsView)
 						pages.RemovePage("metadata")
 					}).
 					AddButton("Cancel", func() {
@@ -393,7 +394,7 @@ func main() {
 				ederror := editor.Run()
 				Check("error opening external editor", ederror)
 				return nil
-			case 'e':
+			case 't':
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				// open bibtex in EDITOR
@@ -409,6 +410,7 @@ func main() {
 		return event
 	})
 
+	go RedrawScreen(table, tagsView)
 	rooterr := app.SetRoot(layout, true).Run()
 	Check("SetRoot error", rooterr)
 }
