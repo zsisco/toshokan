@@ -59,9 +59,11 @@ const EDITOR     = "vim"
 const PDF_VIEWER = "mupdf"
 
 // Default tags
-const ALL_TAG    = "--ALL--"
-const READ_TAG   = "--READ--"
+const ALL_TAG    = "---ALL----"
+const READ_TAG   = "---READ---"
 const UNREAD_TAG = "--UNREAD--"
+
+const HICOLOR = tcell.ColorGreen
 
 // Globals
 var app *tview.Application
@@ -133,7 +135,7 @@ func ScanLibrary() {
 	// scan LIBRARY directory and add an Entry to toshokan for every
 	// filename not there. If a file was removed from the dir but is
 	// still in the JSON/toshokan, remove its entry.
-	// Run this _after_ ReadFromJson is called.
+	// Run this _after_ ReadFromJson.
 	var files []string
 
 	err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
@@ -222,9 +224,9 @@ func RedrawTable(table *tview.Table, tag string) {
 	table.SetTitle(tag)
 	table.SetSelectable(true, false)
 	if current_focus == LIB_FOCUS {
-		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+		table.SetSelectedStyle(tcell.ColorDefault, HICOLOR, 0)
 	} else {
-		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDarkGray, 0)
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
 	}
 }
 
@@ -247,9 +249,9 @@ func RedrawTags(table *tview.Table) {
 	table.SetBorder(false)
 	table.SetSelectable(true, false)
 	if current_focus == TAG_FOCUS {
-		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+		table.SetSelectedStyle(tcell.ColorDefault, HICOLOR, 0)
 	} else {
-		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDarkGray, 0)
+		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
 	}
 }
 
@@ -284,13 +286,27 @@ func main() {
 	// Tags table
 	tagsView := tview.NewTable()
 
-	// Main page view (swaps out library, metadata editor, text editor)
+	// Main page view (swaps out library, metadata editor)
 	pages := tview.NewPages()
 	pages.AddPage("library", table, true, true)
 
-	layout := tview.NewFlex().
-			  AddItem(tagsView, 0, 1, false).
-			  AddItem(pages, 0, 4, true)
+	hotkeys := tview.NewTextView().
+		SetText("ENTER: open in pdf viewer\t" +
+			    "TAB: switch focus\t" +
+			 	"r: refresh\t" +
+				"t: edit tags\t" + 
+			    "m: toggle read flag\t" + 
+			 	"n: edit notes\t" +
+			 	"b: edit bibtex\t" +
+			 	"e: export bibtex\t" +
+			 	"/: search\t").SetTextColor(HICOLOR)
+
+	// Flex ratio 1:4 between tags view and library view
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).
+			  AddItem(tview.NewFlex().
+					  AddItem(tagsView, 0, 1, false).
+					  AddItem(pages, 0, 4, true), 0, 20, true).
+			 AddItem(hotkeys, 0, 1, false)
 
 	app.SetFocus(table)
 	current_focus = LIB_FOCUS
@@ -301,15 +317,14 @@ func main() {
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 	/* TODO: 
 	   [X] enter: open in pdf viewer
-	   [X] r: refresh table view (reload json file) (also tags frame)
-	   [X] e: edit tags (metadata)
-	   [X] q: toggle read flag
-	   [X] w: open notes file in text editor (create file in not exists); 
-		      how to open vim inside the program like aerc?
-	   [X] t: open bib file in text editor (create file in not exists)
-	   [ ] /: search meta data in current view (moves cursor with n/N search results)
 	   [X] tab: swap focus between library table and tags table
-	   [ ] export bibtex to file (command-line argument?)
+	   [X] r: refresh table view (rescan json file and library dir)
+	   [X] t: edit tags (metadata)
+	   [X] m: toggle read flag
+	   [X] n: open notes file in text editor (create file in not exists); 
+	   [X] b: open bib file in text editor (create file in not exists)
+	   [ ] /: search meta data in current view (moves cursor with n/N search results)
+	   [ ] e: export bibtex to file (command-line argument?)
 	 */
 
 		switch event.Key() {
@@ -346,7 +361,7 @@ func main() {
 				if freeInput { return event }
 				Refresh(table, tagsView)
 				return nil
-			case 'e':
+			case 't':
 				// edit meta data
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
@@ -375,13 +390,13 @@ func main() {
 					})
 				metadataForm.SetLabelColor(tcell.ColorDefault)
 				metadataForm.SetFieldBackgroundColor(tcell.ColorDefault)
-				metadataForm.SetButtonBackgroundColor(tcell.ColorDarkGray)
+				metadataForm.SetButtonBackgroundColor(HICOLOR)
 				metadataForm.SetBorder(true).
 					SetTitle("Metadata: " + table.GetCell(row, TITLE).Text).
 					SetTitleAlign(tview.AlignLeft)
 				pages.AddAndSwitchToPage("metadata", metadataForm, true)
 				return nil
-			case 'q':
+			case 'm':
 				// toggle read/unread
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
@@ -395,7 +410,8 @@ func main() {
 				toshokan[filename].Read = ReadFlagToBool(newReadFlag)
 				WriteToJson()
 				return nil
-			case 'w':
+			case 'n':
+				// open notes in editor
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				row, _ := table.GetSelection()
@@ -405,7 +421,8 @@ func main() {
 											 "md")
 				OpenEditor(NOTES + filename)
 				return nil
-			case 't':
+			case 'b':
+				// open bibtex entry in editor
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
 				row, _ := table.GetSelection()
