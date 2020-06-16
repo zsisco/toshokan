@@ -63,7 +63,7 @@ const ALL_TAG    = "---ALL----"
 const READ_TAG   = "---READ---"
 const UNREAD_TAG = "--UNREAD--"
 
-const HICOLOR = tcell.ColorGreen
+const HICOLOR = tcell.ColorTeal
 
 // Globals
 var app *tview.Application
@@ -323,8 +323,8 @@ func main() {
 	   [X] m: toggle read flag
 	   [X] n: open notes file in text editor (create file in not exists); 
 	   [X] b: open bib file in text editor (create file in not exists)
-	   [ ] /: search meta data in current view (moves cursor with n/N search results)
 	   [ ] e: export bibtex to file (command-line argument?)
+	   [ ] /: search meta data in current view (moves cursor with n/N search results)
 	 */
 
 		switch event.Key() {
@@ -432,10 +432,20 @@ func main() {
 											 "bib")
 				OpenEditor(BIBS + filename)
 				return nil
+			case 'e':
+				if freeInput { return event }
+				if current_focus == TAG_FOCUS { return event }
+				// export bibtex
+				// enter name of bibtex to export to
+				// export all entries in current view
+				// could be as simple as `cat FILE1 FILE2 ... > FILENAME.bibtex`
+				return nil
 			case '/':
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
-				// search
+				// capture input string,
+				// search through all titles, authors, years in current view
+				// and redraw view based on search results (maybe new Page?)
 				return nil
 			// Fall through to capture table-level input events like j,k,h,l,...
 			return event
