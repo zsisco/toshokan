@@ -1,10 +1,27 @@
 package main
 
 /* METATODO:
-   How to upload my current library to this program?
+   [ ] How to upload my current library to this program?
    Or am I just starting from scratch adding new papers as they come. 
    (This isn't a bad approach as this program is as much of a library
    as it is a _tracker_ for tracking papers I want to read/am reading.)
+
+   [X] Consider using sub-directories as a way to implicitly tag? Maybe this is
+   too limiting to have one tag. But maybe you can still have the option to 
+   add more tags. It just takes the burden off adding the first one. Need to 
+   change how the library dir is scanned. 
+	   ON-SECOND-THOUGHT: this fucks with my assumptions about filenames.
+	   See MakeFilename().
+	   This works if you can _only_ specify tags through subdirs and
+	   you cannot edit them after adding. I think that's too limiting.
+	   Just add tags to your new, unread papers. Keep it flat.
+
+   [X] How to build/package binary? Check aerc Makefile?
+	   `go build` 
+	
+   [ ] -e: export bibtex to file (command-line argument)
+		   enter name of bibtex to export to
+		   could be as simple as `cat FILE1 FILE2 ... > FILENAME.bibtex`
  */
 
 import (
@@ -32,6 +49,7 @@ type Entry struct {
 	Notes string
 }
 
+// Filename -> Entry
 type EntryMap map[string]*Entry
 
 const (
@@ -49,10 +67,11 @@ const (
 const REFRESH = 20 * time.Millisecond
 
 // Default paths
-const BIBS       = ".bibs/"
 const LIBRARY    = "./library/"
-const NOTES      = ".notes/"
-const TOSHOKAN   = "./toshokan.json"
+const CONFIG     = "./.config/"
+const BIBS       = CONFIG + ".bibs/"
+const NOTES      = CONFIG + ".notes/"
+const TOSHOKAN   = CONFIG + "toshokan.json"
 
 // Default apps
 const EDITOR     = "vim"
@@ -63,7 +82,7 @@ const ALL_TAG    = "---ALL----"
 const READ_TAG   = "---READ---"
 const UNREAD_TAG = "--UNREAD--"
 
-const HICOLOR = tcell.ColorTeal
+const HICOLOR = tcell.ColorPurple
 
 // Globals
 var app *tview.Application
@@ -139,6 +158,7 @@ func ScanLibrary() {
 	var files []string
 
 	err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
+		fmt.Println(info.Name())
 		if info.IsDir() {
 			return nil
 		}
@@ -224,9 +244,9 @@ func RedrawTable(table *tview.Table, tag string) {
 	table.SetTitle(tag)
 	table.SetSelectable(true, false)
 	if current_focus == LIB_FOCUS {
-		table.SetSelectedStyle(tcell.ColorDefault, HICOLOR, 0)
-	} else {
 		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+	} else {
+		table.SetSelectedStyle(HICOLOR, tcell.ColorDefault, 0)
 	}
 }
 
@@ -249,9 +269,9 @@ func RedrawTags(table *tview.Table) {
 	table.SetBorder(false)
 	table.SetSelectable(true, false)
 	if current_focus == TAG_FOCUS {
-		table.SetSelectedStyle(tcell.ColorDefault, HICOLOR, 0)
-	} else {
 		table.SetSelectedStyle(tcell.ColorDefault, tcell.ColorDefault, 0)
+	} else {
+		table.SetSelectedStyle(HICOLOR, tcell.ColorDefault, 0)
 	}
 }
 
@@ -298,8 +318,8 @@ func main() {
 			    "m: toggle read flag\t" + 
 			 	"n: edit notes\t" +
 			 	"b: edit bibtex\t" +
-			 	"e: export bibtex\t" +
-			 	"/: search\t").SetTextColor(HICOLOR)
+			 	"/: search\t" +
+				"ESC: exit\t").SetTextColor(HICOLOR)
 
 	// Flex ratio 1:4 between tags view and library view
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
@@ -321,9 +341,8 @@ func main() {
 	   [X] r: refresh table view (rescan json file and library dir)
 	   [X] t: edit tags (metadata)
 	   [X] m: toggle read flag
-	   [X] n: open notes file in text editor (create file in not exists); 
+	   [X] e: open notes file in text editor (create file in not exists); 
 	   [X] b: open bib file in text editor (create file in not exists)
-	   [ ] e: export bibtex to file (command-line argument?)
 	   [ ] /: search meta data in current view (moves cursor with n/N search results)
 	 */
 
@@ -373,7 +392,7 @@ func main() {
 											 "pdf")
 				newTags := ""
 				metadataForm := tview.NewForm().
-					AddInputField("Tags (semicolon-separated)", toshokan[filename].Tags, 0, nil, func(changed string) {
+					AddInputField("Tags (semicolon-separated):", toshokan[filename].Tags, 0, nil, func(changed string) {
 						newTags = changed
 					}).
 					AddButton("Save", func() {
@@ -410,7 +429,7 @@ func main() {
 				toshokan[filename].Read = ReadFlagToBool(newReadFlag)
 				WriteToJson()
 				return nil
-			case 'n':
+			case 'e':
 				// open notes in editor
 				if freeInput { return event }
 				if current_focus == TAG_FOCUS { return event }
@@ -431,14 +450,6 @@ func main() {
 											 table.GetCell(row, TITLE).Text,
 											 "bib")
 				OpenEditor(BIBS + filename)
-				return nil
-			case 'e':
-				if freeInput { return event }
-				if current_focus == TAG_FOCUS { return event }
-				// export bibtex
-				// enter name of bibtex to export to
-				// export all entries in current view
-				// could be as simple as `cat FILE1 FILE2 ... > FILENAME.bibtex`
 				return nil
 			case '/':
 				if freeInput { return event }
