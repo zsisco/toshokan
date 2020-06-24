@@ -6,19 +6,6 @@ package main
    (This isn't a bad approach as this program is as much of a library
    as it is a _tracker_ for tracking papers I want to read/am reading.)
 
-   [X] Consider using sub-directories as a way to implicitly tag? Maybe this is
-   too limiting to have one tag. But maybe you can still have the option to 
-   add more tags. It just takes the burden off adding the first one. Need to 
-   change how the library dir is scanned. 
-	   ON-SECOND-THOUGHT: this fucks with my assumptions about filenames.
-	   See MakeFilename().
-	   This works if you can _only_ specify tags through subdirs and
-	   you cannot edit them after adding. I think that's too limiting.
-	   Just add tags to your new, unread papers. Keep it flat.
-
-   [X] How to build/package binary? Check aerc Makefile?
-	   `go build` 
-	
    [ ] -e: export bibtex to file (command-line argument)
 		   enter name of bibtex to export to
 		   could be as simple as `cat FILE1 FILE2 ... > FILENAME.bibtex`
