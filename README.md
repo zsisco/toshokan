@@ -9,10 +9,7 @@ A TUI program for managing a library of mostly academic papers.
 
 ## Setup
 
-- library
-- PDF viewer
-- notes
-- bibs
-
-## Shortcuts
+1. Copy `config.go.def` to `config.go` and edit the default fields.
+2. Run `go build`
+3. Fill your library directory with PDFs!
 

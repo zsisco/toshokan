@@ -6,13 +6,16 @@ package main
    (This isn't a bad approach as this program is as much of a library
    as it is a _tracker_ for tracking papers I want to read/am reading.)
 
-   [ ] -e: export bibtex to file (command-line argument)
+   [ ] -e: export bibtex to file (command-line argument with flag import)
 		   enter name of bibtex to export to
 		   could be as simple as `cat FILE1 FILE2 ... > FILENAME.bibtex`
+	
+   [ ] Make a real Makefile for build install uninstall
  */
 
 import (
 	"encoding/json"
+	//"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -53,18 +56,11 @@ const (
 
 const REFRESH = 20 * time.Millisecond
 
-// Default paths
-const LIBRARY    = "./library/"
-const CONFIG     = "./.config/"
+// Config
 const BIBS       = CONFIG + ".bibs/"
 const NOTES      = CONFIG + ".notes/"
 const TOSHOKAN   = CONFIG + "toshokan.json"
 
-// Default apps
-const EDITOR     = "vim"
-const PDF_VIEWER = "mupdf"
-
-// Default tags
 const ALL_TAG    = "---ALL----"
 const READ_TAG   = "---READ---"
 const UNREAD_TAG = "--UNREAD--"
@@ -145,7 +141,7 @@ func ScanLibrary() {
 	var files []string
 
 	err := filepath.Walk(LIBRARY, func(path string, info os.FileInfo, err error) error {
-		fmt.Println(info.Name())
+		//fmt.Println(info.Name())
 		if info.IsDir() {
 			return nil
 		}
@@ -303,10 +299,10 @@ func main() {
 			 	"r: refresh\t" +
 				"t: edit tags\t" + 
 			    "m: toggle read flag\t" + 
-			 	"n: edit notes\t" +
+			 	"e: edit notes\t" +
 			 	"b: edit bibtex\t" +
 			 	"/: search\t" +
-				"ESC: exit\t").SetTextColor(HICOLOR)
+				"ESC: exit").SetTextColor(HICOLOR)
 
 	// Flex ratio 1:4 between tags view and library view
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
