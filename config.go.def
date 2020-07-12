@@ -1,12 +1,9 @@
 package main
 
-// Default paths
-const LIBRARY    = "./library/"
-const CONFIG     = "./.config/"
-const BIBS       = CONFIG + ".bibs/"
-const NOTES      = CONFIG + ".notes/"
-const TOSHOKAN   = CONFIG + "toshokan.json"
-
 // Default apps
 const EDITOR     = "vim"
 const PDF_VIEWER = "mupdf"
+
+// Default paths
+const LIBRARY    = "./library/"
+const CONFIG     = "./.config/"
